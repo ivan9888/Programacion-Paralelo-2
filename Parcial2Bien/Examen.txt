@@ -1,0 +1,118 @@
+//No me fue posible correrlo, me esta fallando collab y no mre aparecen los errores
+#include <stdio.h>
+#include <stdlib.h>
+#include <cuda_runtime.h>
+#include "device_launch_parameters.h"
+
+#define N 1024
+
+
+struct patients{
+		int PatientID[N];
+		int age[N]; //12-60
+    double glucosa[N]; //100-300
+    double heart_rate[N]; //90-170
+    double pressure_s[N]; //100-150	
+    double pressure_d[N]; //70-90	
+    
+};
+
+__global__ void mean(patients* inf, float* media) {
+    
+    extern __shared__ float Sage[];
+    extern __shared__ float SGlucosa[]; 
+    extern __shared__ float Sheart_rate[]; 
+    extern __shared__ float Spressure_s[]; 
+    extern __shared__ float Spressure_d[]; 
+    
+    int tid = threadIdx.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+	
+   Sage[tid] = (i < N) ? inf->age[i] : 0;
+   SGlucosa[tid] = (i < N) ? inf->glucosa[i] : 0;
+   Sheart_rate[tid] = (i < N) ? inf->heart_rate[i] : 0;
+   Spressure_s[tid] = (i < N) ? inf->pressure_s[i] : 0;
+   Spressure_d[tid] = (i < N) ? inf->pressure_d[i] : 0;
+
+  __syncthreads();
+
+  if (tid == 0)  
+  {
+      int sum1=0,sum2=0,sum3=0,sum4=0,sum5=0;
+      for(int j=0;j<256;j++){
+          sum1+= Sage[tid];
+          sum2+= SGlucosa[tid];
+          sum3+= Sheart_rate[tid];
+          sum4+= Spressure_s[tid];
+          sum5+= Spressure_d[tid];
+      }
+        __syncthreads();
+   
+        media[0]=sum1/N;
+        media[1]=sum2/N;
+        media[2]=sum4/N;
+        media[3]=sum4/N;
+        media[4]=sum5/N;
+  }
+}
+
+int main()
+{
+	// declaraciones
+  patients* hst_A,*d_A;
+	float hst_media[]={0,0,0,0,0},*d_media[]={0,0,0,0,0};
+	 
+  //reserva en el host
+ 
+  hst_A = (patients*)malloc(sizeof(double));
+
+  //reserva en el device
+
+  cudaMalloc(&d_A, sizeof(double)*N);
+	cudaMalloc(&d_media, sizeof(float)*N);
+ 
+ 
+  // incializacion
+	srand(1234);
+	for (int i = 0; i<N; i++)
+	{
+		hst_A->PatientID[i] = i;		
+		hst_A->age[i] = rand() % 49+12;								//12-60
+		hst_A->glucosa[i] = rand()% 200+100;						//100-300
+		hst_A->heart_rate[i] = rand()% 80+90;					//90-170
+		hst_A->pressure_s[i] = rand() % 50+100;					 //100-150
+		hst_A->pressure_d[i] = rand()% 20+70;					//70-90					
+		
+	}	
+
+
+	// copia de datos hacia el device
+	cudaMemcpy(d_A, hst_A, sizeof(double), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_media, hst_media, sizeof(float), cudaMemcpyHostToDevice);
+
+
+	//lanzar kernel
+	int block_size = 256;
+  int grid_size = (N + block_size - 1) / block_size;
+  int shared_mem_size = block_size * sizeof(float);
+
+  mean<<<grid_size, block_size, shared_mem_size>>>(d_A, d_media);
+
+	//copiar datos al host
+	cudaMemcpy(hst_media, d_media,sizeof(float), cudaMemcpyDeviceToHost);
+
+ 
+  //resultados
+	printf("es la media de age %0.3f\n",hst_media[0]);
+	printf("es la media de glucosa %0.3f\n",hst_media[1]);
+	printf("es la media de heart_rate %0.3f\n",hst_media[2]);
+	printf("es la media de pressure_s %0.3f\n",hst_media[3]);
+	printf("es la media de pressure_d %0.3f\n",hst_media[4]);	
+ 
+  //liberar memoria
+
+	cudaFree(d_A);
+	cudaFree(d_media);
+
+	return 0;
+}
